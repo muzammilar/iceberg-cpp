@@ -19,6 +19,9 @@
 
 #pragma once
 
+/// \file iceberg/util/string_util.h
+/// \brief Provide string utility helpers.
+
 #include <algorithm>
 #include <cerrno>
 #include <charconv>
