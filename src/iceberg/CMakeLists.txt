@@ -21,6 +21,7 @@ set(ICEBERG_SOURCES
     arrow_c_data_guard_internal.cc
     arrow_c_data_util.cc
     arrow_row_builder.cc
+    catalog/catalog_util.cc
     catalog/memory/in_memory_catalog.cc
     catalog/session_catalog.cc
     catalog/session_context.cc
@@ -39,6 +40,7 @@ set(ICEBERG_SOURCES
     expression/projections.cc
     expression/residual_evaluator.cc
     expression/rewrite_not.cc
+    expression/sanitize_expression.cc
     expression/strict_metrics_evaluator.cc
     expression/term.cc
     file_io.cc

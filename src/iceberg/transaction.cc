@@ -20,7 +20,6 @@
 
 #include <format>
 #include <memory>
-#include <optional>
 
 #include "iceberg/catalog.h"
 #include "iceberg/location_provider.h"
@@ -419,7 +418,7 @@ Result<std::shared_ptr<Table>> Transaction::CommitOnce(bool is_first_attempt) {
         ctx_->metadata_builder =
             TableMetadataBuilder::BuildFrom(ctx_->table->metadata().get());
         for (const auto& update : pending_updates_) {
-          ICEBERG_RETURN_UNEXPECTED(Apply(*update));
+          ICEBERG_RETURN_UNEXPECTED(update->Commit());
         }
       }
       ICEBERG_ASSIGN_OR_RAISE(requirements, TableRequirements::ForUpdateTable(

@@ -47,6 +47,7 @@ iceberg_tests = {
     },
     'table_test': {
         'sources': files(
+            'catalog_util_test.cc',
             'location_provider_test.cc',
             'metadata_table_test.cc',
             'metrics_config_test.cc',
@@ -99,6 +100,7 @@ iceberg_tests = {
             'base64_test.cc',
             'bucket_util_test.cc',
             'config_test.cc',
+            'content_file_util_test.cc',
             'data_file_set_test.cc',
             'decimal_test.cc',
             'endian_test.cc',
@@ -144,6 +146,7 @@ if get_option('rest').enabled()
                 'error_handlers_test.cc',
                 'rest_file_io_test.cc',
                 'rest_json_serde_test.cc',
+                'rest_metrics_reporter_test.cc',
                 'rest_util_test.cc',
             ),
             'dependencies': [iceberg_rest_dep],

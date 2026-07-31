@@ -227,6 +227,14 @@ class LocationProvider;
 class SessionCatalog;
 struct SessionContext;
 
+/// \brief Task execution.
+class Executor;
+
+/// \brief Metrics reporting.
+class MetricsReporter;
+class ScanMetrics;
+class CommitMetrics;
+
 /// \brief Table.
 class Table;
 class TableProperties;

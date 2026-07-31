@@ -228,6 +228,8 @@ struct TableScanContext {
   std::string branch{};
   std::optional<int64_t> min_rows_requested;
   OptionalExecutor plan_executor;
+  std::string table_name;
+  std::shared_ptr<MetricsReporter> metrics_reporter;
 
   // Validate the context parameters to see if they have conflicts.
   [[nodiscard]] Status Validate() const;
@@ -245,10 +247,8 @@ template <typename ScanType = DataTableScan>
 class ICEBERG_TEMPLATE_CLASS_EXPORT TableScanBuilder : public ErrorCollector {
  public:
   /// \brief Constructs a TableScanBuilder for the given table.
-  /// \param metadata Current table metadata.
-  /// \param io FileIO instance for reading manifests files.
-  static Result<std::unique_ptr<TableScanBuilder<ScanType>>> Make(
-      std::shared_ptr<TableMetadata> metadata, std::shared_ptr<FileIO> io);
+  /// \param table Table whose metadata, FileIO, name, and reporter are captured.
+  static Result<std::unique_ptr<TableScanBuilder<ScanType>>> Make(const Table& table);
 
   /// \brief Update property that will override the table's behavior
   /// based on the incoming pair. Unknown properties will be ignored.
@@ -381,12 +381,20 @@ class ICEBERG_TEMPLATE_CLASS_EXPORT TableScanBuilder : public ErrorCollector {
   TableScanBuilder& UseBranch(const std::string& branch)
     requires IsIncrementalScan<ScanType>;
 
+  /// \brief Add a metrics reporter for this scan.
+  ///
+  /// May be called multiple times; each call combines with the previous reporter
+  /// via MetricsReporters::Combine().
+  TableScanBuilder& ReportWith(std::shared_ptr<MetricsReporter> reporter);
+
   /// \brief Builds and returns a TableScan instance.
   /// \return A Result containing the TableScan or an error.
   Result<std::unique_ptr<ScanType>> Build();
 
  protected:
-  TableScanBuilder(std::shared_ptr<TableMetadata> metadata, std::shared_ptr<FileIO> io);
+  TableScanBuilder(std::shared_ptr<TableMetadata> metadata, std::shared_ptr<FileIO> io,
+                   std::string table_name,
+                   std::shared_ptr<MetricsReporter> metrics_reporter);
 
   // Return the schema bound to the specified snapshot.
   Result<std::reference_wrapper<const std::shared_ptr<Schema>>> ResolveSnapshotSchema();
@@ -454,6 +462,9 @@ class ICEBERG_EXPORT DataTableScan : public TableScan {
   /// \brief Plans the scan tasks by resolving manifests and data files.
   /// \return A Result containing scan tasks or an error.
   Result<std::vector<std::shared_ptr<FileScanTask>>> PlanFiles() const;
+
+ private:
+  Status ReportScan(const Snapshot& snapshot, const ScanMetrics& scan_metrics) const;
 
  protected:
   using TableScan::TableScan;
