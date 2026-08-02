@@ -19,6 +19,7 @@
 
 #include "iceberg/expression/literal.h"
 
+#include <cmath>
 #include <limits>
 #include <numbers>
 #include <unordered_set>
@@ -209,11 +210,21 @@ TEST(LiteralTest, FloatSpecialValuesComparison) {
 TEST(LiteralTest, FloatNaNComparison) {
   auto nan1 = Literal::Float(std::numeric_limits<float>::quiet_NaN());
   auto nan2 = Literal::Float(std::numeric_limits<float>::quiet_NaN());
-  auto signaling_nan = Literal::Float(std::numeric_limits<float>::signaling_NaN());
 
-  // NaN should be equal to itself in strong ordering
+  // Identical NaN bit patterns are equivalent under the total ordering.
   EXPECT_EQ(nan1 <=> nan2, std::partial_ordering::equivalent);
-  EXPECT_EQ(nan1 <=> signaling_nan, std::partial_ordering::equivalent);
+}
+
+TEST(LiteralTest, FloatSignedNaNComparison) {
+  auto neg_nan =
+      Literal::Float(std::copysign(std::numeric_limits<float>::quiet_NaN(), -1.0f));
+  auto pos_nan =
+      Literal::Float(std::copysign(std::numeric_limits<float>::quiet_NaN(), +1.0f));
+
+  // Per the total ordering -NaN < ... < +NaN, a negative NaN sorts below a
+  // positive NaN.
+  EXPECT_EQ(neg_nan <=> pos_nan, std::partial_ordering::less);
+  EXPECT_EQ(pos_nan <=> neg_nan, std::partial_ordering::greater);
 }
 
 TEST(LiteralTest, FloatInfinityComparison) {
@@ -260,11 +271,21 @@ TEST(LiteralTest, DoubleSpecialValuesComparison) {
 TEST(LiteralTest, DoubleNaNComparison) {
   auto nan1 = Literal::Double(std::numeric_limits<double>::quiet_NaN());
   auto nan2 = Literal::Double(std::numeric_limits<double>::quiet_NaN());
-  auto signaling_nan = Literal::Double(std::numeric_limits<double>::signaling_NaN());
 
-  // NaN should be equal to itself in strong ordering
+  // Identical NaN bit patterns are equivalent under the total ordering.
   EXPECT_EQ(nan1 <=> nan2, std::partial_ordering::equivalent);
-  EXPECT_EQ(nan1 <=> signaling_nan, std::partial_ordering::equivalent);
+}
+
+TEST(LiteralTest, DoubleSignedNaNComparison) {
+  auto neg_nan =
+      Literal::Double(std::copysign(std::numeric_limits<double>::quiet_NaN(), -1.0));
+  auto pos_nan =
+      Literal::Double(std::copysign(std::numeric_limits<double>::quiet_NaN(), +1.0));
+
+  // Per the total ordering -NaN < ... < +NaN, a negative NaN sorts below a
+  // positive NaN.
+  EXPECT_EQ(neg_nan <=> pos_nan, std::partial_ordering::less);
+  EXPECT_EQ(pos_nan <=> neg_nan, std::partial_ordering::greater);
 }
 
 TEST(LiteralTest, DoubleInfinityComparison) {
