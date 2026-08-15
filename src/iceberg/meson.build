@@ -63,6 +63,11 @@ configure_file(
     install_dir: get_option('includedir') / 'iceberg',
 )
 
+# Resolve spdlog before generating logging/config.h. The feature value controls
+# whether a missing dependency is allowed.
+spdlog_dep = dependency('spdlog', required: get_option('spdlog'))
+spdlog_enabled = spdlog_dep.found()
+
 subdir('logging')
 
 iceberg_include_dir = include_directories('..')
@@ -103,6 +108,7 @@ iceberg_sources = files(
     'location_provider.cc',
     'logging/cerr_logger.cc',
     'logging/logger.cc',
+    'logging/spdlog_logger.cc',
     'manifest/manifest_adapter.cc',
     'manifest/manifest_entry.cc',
     'manifest/manifest_filter_manager.cc',
@@ -228,7 +234,6 @@ croaring_needs_static = (
 croaring_dep = dependency('croaring', static: croaring_needs_static)
 nanoarrow_dep = dependency('nanoarrow')
 nlohmann_json_dep = dependency('nlohmann_json')
-spdlog_dep = dependency('spdlog')
 # utf8proc's header declares its functions __declspec(dllimport) on Windows unless
 # UTF8PROC_STATIC is defined, and the wrap does not propagate that define to consumers.
 # Define it whenever utf8proc is linked statically, so the header's declarations match
@@ -243,13 +248,11 @@ if utf8proc_needs_static
 endif
 zlib_dep = dependency('zlib')
 
-iceberg_deps = [
-    nanoarrow_dep,
-    nlohmann_json_dep,
-    spdlog_dep,
-    utf8proc_dep,
-    zlib_dep,
-]
+iceberg_deps = [nanoarrow_dep, nlohmann_json_dep, utf8proc_dep, zlib_dep]
+
+if spdlog_enabled
+    iceberg_deps += spdlog_dep
+endif
 
 iceberg_lib = library(
     'iceberg',
