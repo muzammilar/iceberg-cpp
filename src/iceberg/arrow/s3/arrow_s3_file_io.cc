@@ -91,13 +91,6 @@ std::string SplitEndpointScheme(std::string_view endpoint,
   return std::string(endpoint);
 }
 
-// Location prefixes this FileIO can serve: must cover every scheme
-// ResolveFileIOName routes here, or such a credential would be dropped.
-bool IsS3FileIOCredentialPrefix(std::string_view prefix) {
-  return prefix == "s3" || prefix.starts_with("s3://") || prefix.starts_with("s3a://") ||
-         prefix.starts_with("s3n://") || prefix.starts_with("oss://");
-}
-
 }  // namespace
 
 /// \brief Configure S3Options from a properties map.
@@ -184,9 +177,8 @@ Result<std::shared_ptr<::arrow::fs::FileSystem>> BuildArrowS3FileSystem(
   return std::shared_ptr<::arrow::fs::FileSystem>(std::move(fs));
 }
 
-// Keep in sync with ResolveFileIOName (resolving_file_io.cc).
 std::string CanonicalizeS3Scheme(std::string_view location) {
-  for (std::string_view scheme : {"s3a://", "s3n://", "oss://"}) {
+  for (std::string_view scheme : {"s3a://", "s3n://"}) {
     if (location.starts_with(scheme)) {
       return std::string("s3://").append(location.substr(scheme.size()));
     }
@@ -242,7 +234,7 @@ Status ArrowS3FileIO::SetStorageCredentials(
     // A server may vend credentials for several storage systems at once;
     // non-S3 prefixes are skipped, not rejected (Java S3FileIO filters
     // credentials by the "s3" prefix).
-    if (!IsS3FileIOCredentialPrefix(credential.prefix)) {
+    if (!IsS3CredentialPrefix(credential.prefix)) {
       continue;
     }
     auto properties = default_properties_;
