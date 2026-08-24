@@ -34,6 +34,8 @@
 #include <nlohmann/json.hpp>
 #include <sys/socket.h>
 
+#include "iceberg/catalog/rest/auth/auth_managers.h"
+#include "iceberg/catalog/rest/auth/auth_properties.h"
 #include "iceberg/catalog/rest/auth/auth_session.h"
 #include "iceberg/catalog/rest/catalog_properties.h"
 #include "iceberg/catalog/rest/error_handlers.h"
@@ -100,6 +102,8 @@ bool CheckServiceReady(uint16_t port) {
 }
 
 std::string CatalogUri() { return std::format("{}:{}", kLocalhostUri, kRestCatalogPort); }
+
+std::string OAuthTokenUri() { return CatalogUri() + "/v1/oauth/tokens"; }
 
 }  // namespace
 
@@ -209,6 +213,130 @@ TEST_F(RestCatalogIntegrationTest, MakeCatalogSuccess) {
   EXPECT_NE(first_context, second_context);
 
   EXPECT_THAT(root->WithContext(SessionContext{}), IsError(ErrorKind::kInvalidArgument));
+}
+
+TEST_F(RestCatalogIntegrationTest, OAuthContextCredentialEndToEnd) {
+  auto client = std::make_shared<HttpClient>();
+  std::unordered_map<std::string, std::string> properties = {
+      {auth::AuthProperties::kAuthType, auth::AuthProperties::kAuthTypeOAuth2},
+      {auth::AuthProperties::kToken.key(), "catalog-token"},
+      {auth::AuthProperties::kOAuth2ServerUri.key(), OAuthTokenUri()},
+  };
+  ICEBERG_UNWRAP_OR_FAIL(auto manager,
+                         auth::AuthManagers::Load("test-catalog", properties));
+  ICEBERG_UNWRAP_OR_FAIL(auto parent, manager->CatalogSession(client, properties));
+  SessionContext context{
+      .session_id = "tenant-context-credential",
+      .credentials = {{auth::AuthProperties::kCredential.key(), "context-client:secret"}},
+  };
+
+  ICEBERG_UNWRAP_OR_FAIL(auto child, manager->ContextualSession(context, parent));
+  ICEBERG_UNWRAP_OR_FAIL(auto authenticated, child->Authenticate({}));
+
+  EXPECT_EQ(authenticated.headers.at("Authorization"),
+            "Bearer client-credentials-token:sub=context-client");
+  auto info = child->OAuth2Info();
+  ASSERT_TRUE(info.has_value());
+  EXPECT_EQ(info->issued_token_type, auth::AuthProperties::kAccessTokenType);
+}
+
+TEST_F(RestCatalogIntegrationTest, OAuthContextCredentialThroughRestCatalog) {
+  auto config = RestCatalogProperties::default_properties();
+  config.Set(RestCatalogProperties::kUri, CatalogUri())
+      .Set(RestCatalogProperties::kName, std::string(kCatalogName))
+      .Set(RestCatalogProperties::kWarehouse, std::string(kWarehouseName));
+  config.mutable_configs()[std::string(RestCatalogProperties::kIOImpl.key())] =
+      std::string(kStdFileIOImpl);
+  config.mutable_configs()[auth::AuthProperties::kAuthType] =
+      auth::AuthProperties::kAuthTypeOAuth2;
+  config.mutable_configs()[auth::AuthProperties::kToken.key()] = "catalog-token";
+  config.mutable_configs()[auth::AuthProperties::kOAuth2ServerUri.key()] =
+      OAuthTokenUri();
+
+  ICEBERG_UNWRAP_OR_FAIL(auto root, RestCatalog::Make(config));
+  SessionContext context{
+      .session_id = "tenant-context-credential",
+      .credentials = {{auth::AuthProperties::kCredential.key(), "context-client:secret"}},
+  };
+  ICEBERG_UNWRAP_OR_FAIL(auto catalog, root->WithContext(context));
+  ICEBERG_UNWRAP_OR_FAIL(auto namespaces,
+                         catalog->ListNamespaces(Namespace{.levels = {}}));
+
+  EXPECT_TRUE(namespaces.empty());
+}
+
+TEST_F(RestCatalogIntegrationTest, OAuthContextTypedTokenEndToEnd) {
+  auto client = std::make_shared<HttpClient>();
+  std::unordered_map<std::string, std::string> properties = {
+      {auth::AuthProperties::kAuthType, auth::AuthProperties::kAuthTypeOAuth2},
+      {auth::AuthProperties::kToken.key(), "catalog-token"},
+      {auth::AuthProperties::kOAuth2ServerUri.key(), OAuthTokenUri()},
+  };
+  ICEBERG_UNWRAP_OR_FAIL(auto manager,
+                         auth::AuthManagers::Load("test-catalog", properties));
+  ICEBERG_UNWRAP_OR_FAIL(auto parent, manager->CatalogSession(client, properties));
+  SessionContext context{
+      .session_id = "tenant-context-token",
+      .credentials = {{auth::AuthProperties::kIdTokenType, "context-id-token"}},
+  };
+
+  ICEBERG_UNWRAP_OR_FAIL(auto child, manager->ContextualSession(context, parent));
+  ICEBERG_UNWRAP_OR_FAIL(auto authenticated, child->Authenticate({}));
+
+  EXPECT_EQ(authenticated.headers.at("Authorization"),
+            "Bearer token-exchange-token:sub=context-id-token,act=catalog-token");
+  auto info = child->OAuth2Info();
+  ASSERT_TRUE(info.has_value());
+  EXPECT_EQ(info->issued_token_type, auth::AuthProperties::kAccessTokenType);
+}
+
+TEST_F(RestCatalogIntegrationTest, OAuthTableTypedTokenEndToEnd) {
+  auto client = std::make_shared<HttpClient>();
+  std::unordered_map<std::string, std::string> properties = {
+      {auth::AuthProperties::kAuthType, auth::AuthProperties::kAuthTypeOAuth2},
+      {auth::AuthProperties::kToken.key(), "catalog-token"},
+      {auth::AuthProperties::kOAuth2ServerUri.key(), OAuthTokenUri()},
+  };
+  ICEBERG_UNWRAP_OR_FAIL(auto manager,
+                         auth::AuthManagers::Load("test-catalog", properties));
+  ICEBERG_UNWRAP_OR_FAIL(auto parent, manager->CatalogSession(client, properties));
+  TableIdentifier table{.ns = Namespace{{"db"}}, .name = "events"};
+
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto child,
+      manager->TableSession(
+          table, {{auth::AuthProperties::kJwtTokenType, "table-jwt-token"}}, parent));
+  ICEBERG_UNWRAP_OR_FAIL(auto authenticated, child->Authenticate({}));
+
+  EXPECT_EQ(authenticated.headers.at("Authorization"),
+            "Bearer token-exchange-token:sub=table-jwt-token,act=catalog-token");
+  auto info = child->OAuth2Info();
+  ASSERT_TRUE(info.has_value());
+  EXPECT_EQ(info->issued_token_type, auth::AuthProperties::kAccessTokenType);
+}
+
+TEST_F(RestCatalogIntegrationTest, OAuthTokenExchangeWithoutActorEndToEnd) {
+  auto client = std::make_shared<HttpClient>();
+  std::unordered_map<std::string, std::string> properties = {
+      {auth::AuthProperties::kAuthType, auth::AuthProperties::kAuthTypeOAuth2},
+      {auth::AuthProperties::kOAuth2ServerUri.key(), OAuthTokenUri()},
+  };
+  ICEBERG_UNWRAP_OR_FAIL(auto manager,
+                         auth::AuthManagers::Load("test-catalog", properties));
+  ICEBERG_UNWRAP_OR_FAIL(auto parent, manager->CatalogSession(client, properties));
+  SessionContext context{
+      .session_id = "tenant-no-actor",
+      .credentials = {{auth::AuthProperties::kIdTokenType, "context-id-token"}},
+  };
+
+  ICEBERG_UNWRAP_OR_FAIL(auto child, manager->ContextualSession(context, parent));
+  ICEBERG_UNWRAP_OR_FAIL(auto authenticated, child->Authenticate({}));
+
+  EXPECT_EQ(authenticated.headers.at("Authorization"),
+            "Bearer token-exchange-token:sub=context-id-token");
+  auto info = child->OAuth2Info();
+  ASSERT_TRUE(info.has_value());
+  EXPECT_EQ(info->issued_token_type, auth::AuthProperties::kAccessTokenType);
 }
 
 TEST_F(RestCatalogIntegrationTest, LoadsConfiguredMetricsReporter) {
