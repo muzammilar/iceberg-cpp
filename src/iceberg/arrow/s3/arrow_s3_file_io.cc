@@ -177,11 +177,13 @@ Result<std::shared_ptr<::arrow::fs::FileSystem>> BuildArrowS3FileSystem(
   return std::shared_ptr<::arrow::fs::FileSystem>(std::move(fs));
 }
 
+// Rewrites any alias of `s3://` (any case — routing is case-insensitive) to
+// exactly that, so locations and credential prefixes compare equal. An alias
+// missing from kS3Schemes would silently stop matching its credential.
 std::string CanonicalizeS3Scheme(std::string_view location) {
-  for (std::string_view scheme : {"s3a://", "s3n://"}) {
-    if (location.starts_with(scheme)) {
-      return std::string("s3://").append(location.substr(scheme.size()));
-    }
+  const auto separator = location.find("://");
+  if (separator != std::string_view::npos && IsS3Scheme(location.substr(0, separator))) {
+    return std::string("s3://").append(location.substr(separator + 3));
   }
   return std::string(location);
 }
